@@ -1,0 +1,1077 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0b0d1a">
+<title>Lode Rush</title>
+<style>
+/* Layout: full-screen arcade cabinet. HUD strip on top, playfield fitted to the space, touch controls in the bottom corners. Single dark look. */
+:root {
+  --bg: #0b0d1a;
+  --panel: #151a33;
+  --ink: #f3ecd2;
+  --dim: #8a8fb3;
+  --gold: #ffc93c;
+  --brick: #c4532d;
+  --danger: #ff5a6e;
+  --ctl: rgba(243, 236, 210, 0.10);
+  --ctl-edge: rgba(243, 236, 210, 0.28);
+  --ctl-on: rgba(255, 201, 60, 0.42);
+  --font-pixel: "Press Start 2P", ui-monospace, "Courier New", monospace;
+  --font-body: ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body {
+  height: 100%; margin: 0; overflow: hidden; background: var(--bg); color: var(--ink);
+  font-family: var(--font-body);
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  touch-action: none; overscroll-behavior: none;
+}
+#app {
+  position: fixed; inset: 0;
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  display: flex; flex-direction: column;
+}
+#hud {
+  display: flex; align-items: center; gap: 14px; padding: 6px 12px; height: 34px; flex: none;
+  font-family: var(--font-pixel); font-size: 10px; letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+#hud .lbl { color: var(--dim); margin-right: 4px; }
+#hud .gold { color: var(--gold); }
+#hud .sp { flex: 1; }
+#hud button {
+  font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--ctl-edge);
+  border-radius: 6px; padding: 5px 9px; touch-action: manipulation;
+}
+#stage { position: relative; flex: 1; min-height: 0; display: flex; justify-content: center; align-items: flex-start; }
+@media (orientation: landscape) { #stage { align-items: center; } }
+canvas#c {
+  image-rendering: pixelated; image-rendering: crisp-edges;
+  background: #050611; border: 2px solid #232a52; border-radius: 4px;
+}
+/* Touch controls */
+.ctl { position: absolute; bottom: calc(env(safe-area-inset-bottom, 0px) + 14px); z-index: 5; touch-action: none; }
+#pad { left: calc(env(safe-area-inset-left, 0px) + 14px); width: var(--pad, 156px); height: var(--pad, 156px); border-radius: 50%;
+  background: var(--ctl); border: 2px solid var(--ctl-edge); }
+#pad .arr { position: absolute; width: 34%; height: 34%; display: grid; place-items: center; color: var(--ink); opacity: 0.55;
+  font-size: 22px; border-radius: 10px; }
+#pad .arr.on { background: var(--ctl-on); opacity: 1; }
+#pad .u { left: 33%; top: 2%; } #pad .d { left: 33%; bottom: 2%; }
+#pad .l { left: 2%; top: 33%; } #pad .r { right: 2%; top: 33%; }
+#knob { position: absolute; width: 30%; height: 30%; left: 35%; top: 35%; border-radius: 50%;
+  background: rgba(243,236,210,0.25); border: 2px solid var(--ctl-edge); pointer-events: none; transition: transform 40ms linear; }
+#digs { right: calc(env(safe-area-inset-right, 0px) + 14px); display: flex; gap: 14px; align-items: flex-end; }
+.dig { width: var(--dig, 78px); height: var(--dig, 78px); border-radius: 50%; border: 2px solid var(--ctl-edge);
+  background: var(--ctl); color: var(--ink); font-family: var(--font-pixel); font-size: 9px;
+  display: grid; place-items: center; line-height: 1.5; touch-action: none; padding: 0; }
+.dig b { display: block; font-size: 22px; font-family: var(--font-body); color: var(--brick); }
+.dig.on { background: var(--ctl-on); }
+#digR { margin-bottom: 34px; }
+/* Overlays */
+[hidden] { display: none !important; }
+#ov { position: absolute; inset: 0; z-index: 20; display: grid; place-items: center; background: rgba(5, 6, 17, 0.82);
+  padding: 16px; overflow-y: auto; touch-action: pan-y; }
+.card { width: min(440px, 100%); background: var(--panel); border: 2px solid #2b3366; border-radius: 12px; padding: 20px 18px;
+  display: flex; flex-direction: column; gap: 12px; text-align: center; }
+.card h1 { font-family: var(--font-pixel); font-size: 26px; margin: 4px 0 2px; color: var(--gold); letter-spacing: 0.06em;
+  text-shadow: 3px 3px 0 var(--brick); }
+.card h2 { font-family: var(--font-pixel); font-size: 15px; margin: 2px 0; line-height: 1.5; text-wrap: balance; }
+.card p { margin: 0; color: var(--dim); font-size: 14px; line-height: 1.5; }
+.card .row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+.btn { font-family: var(--font-pixel); font-size: 11px; color: var(--bg); background: var(--gold); border: none; border-radius: 8px;
+  padding: 14px 16px; touch-action: manipulation; cursor: pointer; flex: 1 1 auto; }
+.btn.alt { background: transparent; color: var(--ink); border: 2px solid var(--ctl-edge); }
+.btn:focus-visible, #hud button:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+.levels { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.levels button { font-family: var(--font-pixel); font-size: 12px; aspect-ratio: 1; border-radius: 8px; border: 2px solid var(--ctl-edge);
+  background: #1d2346; color: var(--ink); touch-action: manipulation; padding: 0; }
+.levels button.done { border-color: var(--gold); color: var(--gold); }
+.levels button:disabled { opacity: 0.3; }
+.help { text-align: left; display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 14px; color: var(--ink); }
+.help dt { font-family: var(--font-pixel); font-size: 10px; color: var(--gold); padding-top: 3px; }
+.help dd { margin: 0; color: var(--dim); line-height: 1.4; }
+.stat { font-family: var(--font-pixel); font-size: 11px; color: var(--ink); line-height: 1.8; }
+#rot { display: none; }
+@media (orientation: portrait) { #rot { display: block; } }
+@media (prefers-reduced-motion: reduce) { #knob { transition: none; } }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="hud">
+    <span><span class="lbl">LV</span><span id="hLvl">1</span></span>
+    <span class="gold"><span class="lbl">$</span><span id="hGold">0</span></span>
+    <span><span class="lbl">♥</span><span id="hLives">5</span></span>
+    <span><span class="lbl">PTS</span><span id="hScore">0</span></span>
+    <span class="sp"></span>
+    <button id="bPause" type="button" aria-label="Pause">II</button>
+  </div>
+  <div id="stage"><canvas id="c" width="448" height="256"></canvas></div>
+  <div id="pad" class="ctl" aria-label="Move">
+    <div class="arr u">▲</div><div class="arr d">▼</div><div class="arr l">◀</div><div class="arr r">▶</div>
+    <div id="knob"></div>
+  </div>
+  <div id="digs" class="ctl">
+    <button class="dig" id="digL" type="button" aria-label="Dig left"><span><b>◣</b>DIG</span></button>
+    <button class="dig" id="digR" type="button" aria-label="Dig right"><span><b>◢</b>DIG</span></button>
+  </div>
+  <div id="ov"></div>
+</div>
+<script>
+'use strict';
+// ---------------------------------------------------------------------------
+// Levels. 28x16. Legend:
+//  .  empty      #  brick (diggable)   @  solid stone   H  ladder   -  rope
+//  $  gold       S  escape ladder (appears when all gold is taken)
+//  X  false brick (looks solid, you fall through)   &  player   0  guard
+// LEVELS-START
+const LEVELS = [
+{ name: 'First Steps', map: [
+"....................S.......",
+"....................S.......",
+"..$.........$.......S...$...",
+"#####H#######H###########H##",
+".....H.......H...........H..",
+".....H.......H...........H..",
+".$...H.......H----------.H..",
+"#####H###########.......#H##",
+".....H..................#H..",
+".....H..................#H..",
+"..&..H.......$......0...#H$.",
+"#######H############H#######",
+".......H............H.......",
+".......H............H.......",
+"...$...H.......$....H....$..",
+"############################"]},
+{ name: 'Dig In', map: [
+"........................S...",
+"........................S...",
+"..&..........0..........S...",
+"####H###################H###",
+"....H...................H...",
+"....H...................H...",
+"....H........$..........H...",
+"@@@@@######@@@@@######@@H@@@",
+"@...$...$..@@@@@.$...$@.H...",
+"@.@@@@@@@@@@@@@@.@@@@@@.H...",
+"........................H...",
+"...$....................H..$",
+"#####H############H#####H###",
+".....H............H.....H...",
+".$...H......$.....H..0..H.$.",
+"############################"]},
+{ name: 'Rope Bridges', map: [
+"...........................S",
+"...........................S",
+"&.....----------.....----..S",
+"######..........#####....##H",
+"...........................H",
+"...$.......$.......$.......H",
+"@@@@@@@H@@@@@@@@@@@@@@@@@@@H",
+".......H...................H",
+".......H----------------...H",
+".......H...................H",
+"..$....H.......$...$.......H",
+"#######H###....######....##H",
+"...........................H",
+"..........0................H",
+"...$.......$....$.......$..H",
+"############################"]},
+{ name: 'Ladder Lattice', map: [
+"..............S.............",
+"..............S.............",
+"..$..0........S..........$..",
+"##H#####H#####H#####H#####H#",
+"..H.....H.....H.....H.....H.",
+"..H..$..H.....H..$..H..0..H.",
+"#####H#####H#####H#####H####",
+".....H.....H.....H.....H....",
+"..$..H..$..H.....H..$..H..$.",
+"##H#####H#####H#####H#####H#",
+"..H.....H.....H.....H.....H.",
+"..H..0..H..$..H.....H..$..H.",
+"#####H#####H#####H#####H####",
+".....H.....H.....H.....H....",
+"..$..H..&..H..$..H..$..H..$.",
+"############################"]},
+{ name: 'False Floors', map: [
+"S...........................",
+"S...........................",
+"H.&.$............0.......$.H",
+"H####XX######XXX######XX###H",
+"H..........................H",
+"H...$.....$..........$.....H",
+"H######XXX#######H###XX####H",
+"H................H.........H",
+"H......$.........H......$..H",
+"H#####XXX####@@@@H@@@@XX###H",
+"H................H.........H",
+"H..$...0.....$...H....$....H",
+"H##########XX####H#####XX##H",
+"H................H.........H",
+"H..$......$......H...$....$H",
+"############################"]},
+{ name: 'Twin Towers', map: [
+"..............S.............",
+"..............S.............",
+".........-----S-----........",
+"...######.....H.....######..",
+"...@.$$.@.....H.....@.$$.@..",
+"...@.@@@@.....H.....@@@@.@..",
+"..............H.............",
+"..$....0......H..........$..",
+"#####H###@@@@@H@@@@@###H####",
+".....H........H........H....",
+".....H...$....H....$...H....",
+"#####H##########H#####H#####",
+".....H..........H.....H.....",
+".....H..........H.....H.....",
+"..$..H...&..0...H..$..H..$..",
+"############################"]},
+{ name: 'Rope Maze', map: [
+"S...........................",
+"S...........................",
+"H.....0..$............0.....",
+"H###########-----###########",
+"H...........................",
+"H.$..-------------------.$..",
+"H#####..................####",
+"H...........................",
+"H....$.....$......$.....$...",
+"H#########H######H#########.",
+"H.........H------H..........",
+"H.$.......H......H......$...",
+"H#####XX##H##@@##H###XX#####",
+"H...........................",
+"H..$...&.....$.....0....$...",
+"############################"]},
+{ name: 'The Vault', map: [
+".............S..............",
+".............S..............",
+".&...........S...........0..",
+"##H##########H##########H###",
+"..H..........H..........H...",
+"..H...$......H......$...H...",
+"##H###@@@@#######@@@@###H###",
+"..H...@.............@...H...",
+"..H...@..$..$..$..$.@...H...",
+"..H...@######..#####@...H...",
+"..H.....................H...",
+"..H...$..........0...$..H...",
+"#####H############H#########",
+".....H............H.........",
+"..$..H...$...0....H..$...$..",
+"############################"]},
+{ name: 'Pyramid', map: [
+"..............S.............",
+"..............S.............",
+"..............S.............",
+"...0.......$..H..$..........",
+".........H####H####H........",
+".........H....H....H........",
+"....$....H.$..H..$.H....$...",
+"....H####H####H####H####H...",
+"....H....H....H....H....H...",
+"..$.H.$..H....H....H..$.H.$.",
+"#######H############H#######",
+".......H............H.......",
+".......H..$...0...$.H.......",
+"@@@@@@@H@@@@@@@@@@@@H@@@@@@@",
+"..$..&.H.....0......H...$...",
+"############################"]},
+{ name: 'Trapdoor Run', map: [
+"S..........................S",
+"S..........................S",
+"H..$.....0.....$....0...$..H",
+"H###XX#####XX#H####XX######H",
+"H.............H............H",
+"H.....$.......H.$.....$....H",
+"H#######XX####H###XX#######H",
+"H.............H............H",
+"H..$......$...H..$......$..H",
+"H####XX#####XXH######XX####H",
+"H.............H............H",
+"H....$.....0..H.$......$...H",
+"H#####@@@XX@@@@@@XX@@@#####H",
+"H..........................H",
+"H..$..&...$.....0...$....$.H",
+"############################"]},
+{ name: 'Hanging Gardens', map: [
+".............S..............",
+".............S..............",
+"$------------H-------------$",
+"#............H.............#",
+".............H..............",
+"..$..0.----..H..----...$....",
+"#######....##H##....########",
+".............H..............",
+"...$.....$...H.......$..$...",
+"##H#######---H-----#####H###",
+"..H.....................H...",
+"..H.$.-----.0..-----.$..H...",
+"##H###.....####.....####H###",
+"..H.....................H...",
+"..H.$...$...&...$..0.$..H.$.",
+"############################"]},
+{ name: 'The Gauntlet', map: [
+"S..........................S",
+"S..........................S",
+"H..$...0...H...$..0....$...H",
+"H#####XX###H@@@@####XX#####H",
+"H..........H...............H",
+"H...$......H----------.$...H",
+"H###########..........#####H",
+"H..........................H",
+"H.$...$..0....$....$...$...H",
+"H####H######@@@@######H####H",
+"H....H................H....H",
+"H.$..H..$...0....$....H..$.H",
+"H@@@@@@@####XX####@@@@@@@@@H",
+"H..........................H",
+"H.$...$...&....0....$...$..H",
+"############################"]},
+];
+// LEVELS-END
+
+// ---------------------------------------------------------------------------
+const W = 28, H = 16, T = 16;
+const E = 0, BR = 1, SO = 2, LA = 3, RO = 4, TR = 5, HI = 6, HOLE = 7;
+const DIG_T = 16, OPEN_T = 330, FILL_T = 40;        // hole timings (ticks @60Hz)
+const TRAP_T = 150;                                  // guard stuck in hole
+const PLAYER_SPD = 1.1, PLAYER_FALL = 1.7;
+const DIFF = {
+  easy:   { label: 'Easy',   guard: 0.48, lives: 9 },
+  normal: { label: 'Normal', guard: 0.60, lives: 6 },
+  hard:   { label: 'Hard',   guard: 0.74, lives: 4 },
+};
+
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+
+// ---------------------------------------------------------------------------
+// Persistence
+const SAVE_KEY = 'lodeRush.v1';
+let save = { unlocked: 1, done: {}, diff: 'normal', sound: true, best: 0, cur: null };
+try { const s = JSON.parse(localStorage.getItem(SAVE_KEY)); if (s) save = Object.assign(save, s); } catch (e) {}
+function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {} }
+
+// ---------------------------------------------------------------------------
+// Sound (tiny synth, starts after first touch)
+let actx = null;
+function audio() {
+  if (!save.sound) return null;
+  if (!actx) { try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return null; } }
+  if (actx.state === 'suspended') actx.resume();
+  return actx;
+}
+function tone(f0, f1, dur, type = 'square', vol = 0.05, delay = 0) {
+  const a = audio(); if (!a) return;
+  const t0 = a.currentTime + delay;
+  const o = a.createOscillator(), g = a.createGain();
+  o.type = type; o.frequency.setValueAtTime(f0, t0);
+  if (f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1, t0 + dur);
+  g.gain.setValueAtTime(vol, t0); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  o.connect(g).connect(a.destination); o.start(t0); o.stop(t0 + dur + 0.02);
+}
+const sfx = {
+  gold() { tone(880, 880, 0.06, 'square', 0.04); tone(1320, 1320, 0.09, 'square', 0.04, 0.06); },
+  dig() { tone(220, 70, 0.18, 'sawtooth', 0.05); },
+  trap() { tone(330, 160, 0.2, 'triangle', 0.08); },
+  kill() { tone(700, 90, 0.3, 'square', 0.05); },
+  die() { tone(660, 50, 0.9, 'sawtooth', 0.06); },
+  reveal() { [523, 659, 784, 1047].forEach((f, i) => tone(f, f, 0.12, 'square', 0.04, i * 0.08)); },
+  win() { [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, f, 0.14, 'triangle', 0.08, i * 0.1)); },
+};
+function buzz(ms) { try { navigator.vibrate && navigator.vibrate(ms); } catch (e) {} }
+
+// ---------------------------------------------------------------------------
+// Sprites: 16x16 pixel art, recoloured per character
+const SPR = {
+  runA: [
+"......hhhh......",".....hhhhhh.....","......sssks.....","......sssss.....",".......sss......",
+".....bbbbbb.....","....bbbbbbbb....","...s.bbbbbb.s...","......bbbb......","......bbbb......",
+"......pppp......",".....pp..pp.....","....pp....pp....","....pp.....pp...","...pp......pp...","...ff.......ff.."],
+  runB: [
+"......hhhh......",".....hhhhhh.....","......sssks.....","......sssss.....",".......sss......",
+"......bbbbb.....",".....bbbbbbb....",".....sbbbbbs....","......bbbb......","......bbbb......",
+"......pppp......","......pppp......","......pp.pp.....",".....pp..pp.....",".....pp..pp.....",".....ff..fff...."],
+  climb: [
+"...s..hhhh..s...","...s.hhhhhh.s...","...b.hhhhhh.b...","...bbhhhhhhbb...","....bbhhhhbb....",
+".....bbbbbb.....",".....bbbbbb.....","......bbbb......","......bbbb......","......bbbb......",
+"......pppp......",".....pp..pp.....",".....pp..pp.....",".....pp...pp....",".....pp...pp....",".....ff....ff..."],
+  fall: [
+"..s...hhhh...s..","..s..hhhhhh..s..","..b...sssks..b..","..bb..sssss.bb..","...bb..sss.bb...",
+"....bbbbbbbb....",".....bbbbbb.....","......bbbb......","......bbbb......","......bbbb......",
+"......pppp......",".....pp..pp.....","....pp....pp....","...pp......pp...","...f........f...","................"],
+};
+const PAL = {
+  player: { h: '#f3ecd2', s: '#f6c79a', k: '#10131f', b: '#3aa6ff', p: '#f3ecd2', f: '#8a8fb3' },
+  guard:  { h: '#ff5a6e', s: '#ffd0a0', k: '#ffffff', b: '#c03a52', p: '#5b2a43', f: '#1b0d16' },
+  guardG: { h: '#ffc93c', s: '#ffd0a0', k: '#ffffff', b: '#c03a52', p: '#5b2a43', f: '#1b0d16' },
+};
+function makeSprite(rows, pal, flip) {
+  const c = document.createElement('canvas'); c.width = 16; c.height = 16;
+  const x = c.getContext('2d');
+  rows.forEach((row, y) => { for (let i = 0; i < 16; i++) { const ch = row[i]; if (ch !== '.' && pal[ch]) {
+    x.fillStyle = pal[ch]; x.fillRect(flip ? 15 - i : i, y, 1, 1); } } });
+  return c;
+}
+const sprites = {};
+for (const who in PAL) { sprites[who] = {}; for (const k in SPR) {
+  sprites[who][k] = [makeSprite(SPR[k], PAL[who], false), makeSprite(SPR[k], PAL[who], true)]; } }
+
+// Tiles
+function tileCanvas(draw) { const c = document.createElement('canvas'); c.width = T; c.height = T; draw(c.getContext('2d')); return c; }
+const tBrick = tileCanvas(x => {
+  x.fillStyle = '#c4532d'; x.fillRect(0, 0, 16, 16);
+  x.fillStyle = '#e07446'; x.fillRect(0, 0, 16, 1); x.fillRect(0, 8, 16, 1);
+  x.fillStyle = '#5e2213'; x.fillRect(0, 7, 16, 1); x.fillRect(0, 15, 16, 1);
+  x.fillRect(7, 0, 1, 7); x.fillRect(15, 0, 1, 7); x.fillRect(3, 8, 1, 7); x.fillRect(11, 8, 1, 7);
+});
+const tSolid = tileCanvas(x => {
+  x.fillStyle = '#5d6488'; x.fillRect(0, 0, 16, 16);
+  x.fillStyle = '#868dba'; x.fillRect(0, 0, 16, 2); x.fillRect(0, 0, 2, 16);
+  x.fillStyle = '#353a57'; x.fillRect(0, 14, 16, 2); x.fillRect(14, 0, 2, 16);
+  x.fillStyle = '#4b5174'; x.fillRect(5, 5, 6, 6);
+});
+const tLadder = tileCanvas(x => {
+  x.fillStyle = '#e9dcae'; x.fillRect(2, 0, 2, 16); x.fillRect(12, 0, 2, 16);
+  x.fillStyle = '#c9b77e'; for (let y = 2; y < 16; y += 4) x.fillRect(4, y, 8, 2);
+});
+const tRope = tileCanvas(x => {
+  x.fillStyle = '#b89a62'; x.fillRect(0, 2, 16, 2);
+  x.fillStyle = '#7d6640'; for (let i = 0; i < 16; i += 3) x.fillRect(i, 3, 1, 1);
+});
+const tGold = tileCanvas(x => {
+  x.fillStyle = '#8f5a00'; x.fillRect(2, 10, 12, 6);
+  x.fillStyle = '#ffc93c'; x.fillRect(3, 9, 10, 6); x.fillRect(5, 7, 6, 2);
+  x.fillStyle = '#fff1b0'; x.fillRect(5, 9, 2, 2); x.fillRect(9, 11, 2, 1); x.fillRect(6, 7, 2, 1);
+});
+
+// ---------------------------------------------------------------------------
+// Game state
+let G = null;            // current level state
+let mode = 'menu';       // menu | play | pause | dying | won | over | done
+let lives = 6, score = 0, levelIdx = 0;
+
+function loadLevel(i) {
+  const L = LEVELS[i];
+  const map = [], gold = [];
+  let player = null; const guards = [];
+  for (let r = 0; r < H; r++) {
+    map.push([]); gold.push([]);
+    for (let c = 0; c < W; c++) {
+      const ch = L.map[r][c] || '.';
+      let t = E;
+      if (ch === '#') t = BR; else if (ch === '@') t = SO; else if (ch === 'H') t = LA; else if (ch === '-') t = RO;
+      else if (ch === 'X') t = TR; else if (ch === 'S') t = HI;
+      map[r].push(t); gold[r].push(ch === '$');
+      if (ch === '&') player = mkEnt(c, r, false);
+      if (ch === '0') guards.push(mkEnt(c, r, true));
+    }
+  }
+  guards.forEach((g, k) => { g.id = k; g.home = { x: g.x, y: g.y }; });
+  G = { map, gold, holes: new Map(), player, guards, revealed: false, revealT: 0, tick: 0,
+        found: new Set(), parts: [], digFx: [], goldTotal: countGold(gold) };
+}
+function mkEnt(c, r, isGuard) {
+  return { x: c * T, y: r * T, isGuard, falling: false, dir: 1, acc: 0, anim: 0, moving: false, pose: 'run',
+           state: 'normal', timer: 0, carry: null, carryT: 0, ignoreHole: null, intent: { h: 0, v: 0 },
+           waitT: 0, digT: 0, digQ: null };
+}
+function countGold(gold) { let n = 0; for (const row of gold) for (const g of row) if (g) n++; return n; }
+function goldLeft() { return countGold(G.gold) + G.guards.filter(g => g.carry).length; }
+
+// Tile queries
+function eff(c, r) {
+  if (c < 0 || c >= W || r < 0 || r >= H) return SO;
+  const t = G.map[r][c];
+  if (t === HI) return G.revealed ? LA : E;
+  if (t === BR) { const h = G.holes.get(r * W + c); if (h && h.t >= DIG_T) return HOLE; }
+  return t;
+}
+const isBlock = t => t === BR || t === SO;
+const isStand = t => t === BR || t === SO || t === LA;
+function guardAt(c, r, except) {
+  for (const g of G.guards) {
+    if (g === except || g.state === 'dead') continue;
+    if (Math.round(g.x / T) === c && Math.round(g.y / T) === r) return g;
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Movement: one unit step. Entities move along one axis at a time and snap to
+// the grid on the other axis, like the classic.
+function shouldFall(e, c, r) {
+  const here = eff(c, r);
+  if (here === LA || here === RO) return false;
+  if (e.isGuard && here === HOLE) return false;
+  const below = eff(c, r + 1);
+  if (isStand(below)) return false;
+  if (guardAt(c, r + 1, e)) return false;
+  if (e.ignoreHole && e.ignoreHole.c === c && e.ignoreHole.r === r + 1) return false;
+  return true;
+}
+function step(e, h, v) {
+  const c = Math.round(e.x / T), r = Math.round(e.y / T);
+  const xa = e.x % T === 0, ya = e.y % T === 0;
+  e.moving = false;
+  if (!ya && !e.falling) {
+    const r0 = Math.floor(e.y / T);
+    if (eff(c, r0) !== LA && eff(c, r0 + 1) !== LA) e.falling = true;
+  }
+  if (e.falling && !ya) { fallStep(e, c); return; }
+  if (ya && shouldFall(e, c, r)) {
+    if (!e.falling && eff(c, r + 1) === TR) G.found.add((r + 1) * W + c);
+    e.falling = true; fallStep(e, c); return;
+  }
+  e.falling = false;
+  const here = eff(c, r);
+  e.pose = here === LA ? 'climb' : here === RO && ya ? 'rope' : 'run';
+  if (v < 0) {
+    let ok;
+    if (ya) ok = here === LA && !isBlock(eff(c, r - 1)) && r > 0;
+    else { const r0 = Math.floor(e.y / T); ok = (eff(c, r0) === LA || eff(c, r0 + 1) === LA) && !isBlock(eff(c, r0)); }
+    if (ok) { if (!xa) e.x += Math.sign(c * T - e.x); else e.y--; e.moving = true; e.pose = 'climb'; return; }
+  } else if (v > 0) {
+    let ok;
+    if (ya) ok = !isBlock(eff(c, r + 1)) && !guardAt(c, r + 1, e);
+    else ok = !isBlock(eff(c, Math.floor(e.y / T) + 1));
+    if (ok) { if (!xa) e.x += Math.sign(c * T - e.x); else e.y++; e.moving = true;
+      if (eff(c, Math.floor(e.y / T)) === LA || eff(c, Math.floor(e.y / T) + 1) === LA) e.pose = 'climb'; return; }
+  }
+  if (h !== 0) {
+    if (!ya) { e.y += Math.sign(r * T - e.y); e.moving = true; return; }
+    if (xa) {
+      if (isBlock(eff(c + h, r))) { e.dir = h; return; }
+      if (e.isGuard && guardAt(c + h, r, e)) return;
+    }
+    e.x += h; e.dir = h; e.moving = true;
+  }
+}
+function fallStep(e, c) {
+  e.y++; if (e.x !== c * T) e.x += Math.sign(c * T - e.x);
+  e.pose = 'fall'; e.moving = true;
+}
+
+// ---------------------------------------------------------------------------
+// Player
+const input = { h: 0, v: 0 };
+const keys = new Set();
+function readInput() {
+  let h = pad.h, v = pad.v;
+  if (keys.has('ArrowLeft') || keys.has('a')) h = -1;
+  if (keys.has('ArrowRight') || keys.has('d')) h = 1;
+  if (keys.has('ArrowUp') || keys.has('w')) v = -1;
+  if (keys.has('ArrowDown') || keys.has('s')) v = 1;
+  input.h = h; input.v = v;
+}
+function queueDig(d) { if (mode === 'play' && G) G.player.digQ = { d, ttl: 12 }; }
+
+function tryDig(p) {
+  const q = p.digQ; if (!q) return false;
+  if (--q.ttl <= 0) p.digQ = null;
+  if (p.falling || p.y % T !== 0) return false;
+  const c = Math.round(p.x / T), r = Math.round(p.y / T), tc = c + q.d;
+  if (tc < 0 || tc >= W || r + 1 >= H) { p.digQ = null; return false; }
+  if (G.map[r + 1][tc] !== BR || G.holes.has((r + 1) * W + tc)) { p.digQ = null; return false; }
+  const above = eff(tc, r);
+  if (above !== E || G.gold[r][tc] || guardAt(tc, r)) { p.digQ = null; return false; }
+  p.x = c * T; p.dir = q.d; p.digQ = null; p.digT = DIG_T;
+  G.holes.set((r + 1) * W + tc, { c: tc, r: r + 1, t: 0 });
+  sfx.dig(); buzz(12);
+  for (let i = 0; i < 6; i++) G.parts.push({ x: tc * T + 8, y: (r + 1) * T + 2, vx: (Math.random() - 0.5) * 1.6,
+    vy: -Math.random() * 1.8, life: 28, col: '#e07446' });
+  return true;
+}
+
+function updatePlayer() {
+  const p = G.player;
+  if (p.digT > 0) { p.digT--; p.pose = 'run'; return; }
+  if (tryDig(p)) return;
+  p.acc += p.falling ? PLAYER_FALL : PLAYER_SPD;
+  while (p.acc >= 1) {
+    p.acc -= 1;
+    step(p, input.h, input.v);
+    collect(p);
+    if (G.revealed && p.y === 0 && goldLeft() === 0) { winLevel(); return; }
+  }
+  if (p.moving) p.anim++;
+}
+function collect(p) {
+  const c = Math.round(p.x / T), r = Math.round(p.y / T);
+  if (r >= 0 && r < H && G.gold[r][c] && Math.abs(p.y - r * T) < 10 && Math.abs(p.x - c * T) < 10) {
+    G.gold[r][c] = false; score += 250; sfx.gold(); buzz(8);
+    for (let i = 0; i < 10; i++) G.parts.push({ x: c * T + 8, y: r * T + 10, vx: (Math.random() - 0.5) * 2,
+      vy: -Math.random() * 2 - 0.5, life: 30, col: i % 2 ? '#ffc93c' : '#fff1b0' });
+    checkReveal();
+  }
+}
+function checkReveal() {
+  if (!G.revealed && goldLeft() === 0) { G.revealed = true; G.revealT = 90; sfx.reveal(); }
+}
+
+// ---------------------------------------------------------------------------
+// Guards: breadth-first search toward the player over the grid. Guards don't
+// "see" open holes, so they walk right into them.
+function gEff(c, r) { const t = eff(c, r); return t === HOLE ? BR : t; }
+function bfsDir(g) {
+  const sc = Math.round(g.x / T), sr = Math.round(g.y / T);
+  const p = G.player; const pc = Math.round(p.x / T), pr = Math.round(p.y / T);
+  const N = W * H, seen = new Int16Array(N).fill(-1), first = new Int8Array(N), q = [];
+  const start = sr * W + sc; seen[start] = 0; first[start] = -1; q.push(start);
+  let best = start, bestScore = Math.abs(sc - pc) + Math.abs(sr - pr) * 3;
+  // first-move codes: 0 left, 1 right, 2 up, 3 down
+  for (let qi = 0; qi < q.length; qi++) {
+    const k = q[qi], c = k % W, r = (k / W) | 0;
+    if (c === pc && r === pr) { best = k; break; }
+    const sc2 = Math.abs(c - pc) + Math.abs(r - pr) * 3 + seen[k] * 0.01;
+    if (sc2 < bestScore) { bestScore = sc2; best = k; }
+    const here = gEff(c, r);
+    const sup = here === LA || here === RO || isStand(gEff(c, r + 1)) || r + 1 >= H;
+    const nb = [];
+    if (!sup) nb.push([c, r + 1, 3]);
+    else {
+      if (!isBlock(gEff(c - 1, r))) nb.push([c - 1, r, 0]);
+      if (!isBlock(gEff(c + 1, r))) nb.push([c + 1, r, 1]);
+      if (here === LA && r > 0 && !isBlock(gEff(c, r - 1))) nb.push([c, r - 1, 2]);
+      if (r + 1 < H && !isBlock(gEff(c, r + 1))) nb.push([c, r + 1, 3]);
+    }
+    for (const [nc, nr, mv] of nb) {
+      if (nc < 0 || nc >= W || nr < 0 || nr >= H) continue;
+      const nk = nr * W + nc; if (seen[nk] !== -1) continue;
+      seen[nk] = seen[k] + 1; first[nk] = k === start ? mv : first[k]; q.push(nk);
+    }
+  }
+  if (best === start) return null;
+  return first[best];
+}
+const MV = [{ h: -1, v: 0 }, { h: 1, v: 0 }, { h: 0, v: -1 }, { h: 0, v: 1 }];
+
+function guardSpeed() {
+  return DIFF[save.diff].guard + Math.min(levelIdx, 11) * 0.008;
+}
+function updateGuard(g) {
+  if (g.state === 'dead') { if (--g.timer <= 0) respawnGuard(g); return; }
+  if (g.state === 'spawn') { if (--g.timer <= 0) g.state = 'normal'; return; }
+  if (g.state === 'trapped') {
+    if (--g.timer <= 0) g.state = 'climb';
+    return;
+  }
+  g.acc += g.falling ? PLAYER_FALL * 0.8 : guardSpeed();
+  while (g.acc >= 1) {
+    g.acc -= 1;
+    if (g.state === 'climb') {
+      const c = Math.round(g.x / T), r0 = g.holeR;
+      if (guardAt(c, r0 - 1, g) && g.y <= r0 * T) break;
+      g.y--; g.pose = 'climb'; g.moving = true; g.anim++;
+      if (g.y <= (r0 - 1) * T) {
+        g.y = (r0 - 1) * T; g.state = 'normal'; g.ignoreHole = { c, r: r0 };
+        const pc = Math.round(G.player.x / T);
+        g.exitDir = pc < c ? -1 : pc > c ? 1 : (Math.random() < 0.5 ? -1 : 1);
+      }
+      continue;
+    }
+    const c = Math.round(g.x / T), r = Math.round(g.y / T);
+    const xa = g.x % T === 0, ya = g.y % T === 0;
+    // fell into a hole?
+    if (xa && ya && eff(c, r) === HOLE && !(g.ignoreHole && g.ignoreHole.c === c && g.ignoreHole.r === r)) {
+      g.state = 'trapped'; g.timer = TRAP_T; g.holeR = r; g.falling = false; g.pose = 'fall';
+      score += 75; sfx.trap();
+      if (g.carry) {
+        if (r > 0 && eff(c, r - 1) === E && !G.gold[r - 1][c]) { G.gold[r - 1][c] = true; g.carry = null; }
+      }
+      return;
+    }
+    if (g.ignoreHole && (c !== g.ignoreHole.c || r !== g.ignoreHole.r - 1 || !G.holes.has(g.ignoreHole.r * W + g.ignoreHole.c))) {
+      if (xa) g.ignoreHole = null;
+    }
+    if (xa && ya && !g.falling) {
+      // gold handling
+      if (!g.carry && G.gold[r][c] && Math.random() < 0.5) { G.gold[r][c] = false; g.carry = { c, r }; g.carryT = 120 + Math.random() * 360; }
+      else if (g.carry && g.carryT <= 0 && eff(c, r) === E && !G.gold[r][c] && isStand(eff(c, r + 1))) { G.gold[r][c] = true; g.carry = null; }
+      // decide
+      if (g.ignoreHole && c === g.ignoreHole.c) {
+        let d = g.exitDir;
+        if (isBlock(eff(c + d, r)) || guardAt(c + d, r, g)) d = -d;
+        g.intent = isBlock(eff(c + d, r)) ? { h: 0, v: 0 } : { h: d, v: 0 };
+      } else {
+        const mv = bfsDir(g);
+        g.intent = mv === null ? { h: 0, v: 0 } : MV[mv];
+        if (mv !== null) {
+          const tc = c + g.intent.h, tr = r + g.intent.v;
+          if (guardAt(tc, tr, g)) {
+            g.waitT++;
+            if (g.waitT > 40) { g.intent = MV[(Math.random() * 4) | 0]; g.waitT = 0; }
+            else g.intent = { h: 0, v: 0 };
+          } else g.waitT = 0;
+        }
+      }
+    }
+    step(g, g.intent.h, g.intent.v);
+    if (g.moving) g.anim++;
+  }
+  if (g.carry) g.carryT--;
+}
+function killGuard(g) {
+  score += 75; sfx.kill();
+  if (g.carry) { const { c, r } = g.carry; if (!G.gold[r][c]) G.gold[r][c] = true; g.carry = null; }
+  g.state = 'dead'; g.timer = 50; g.ignoreHole = null;
+}
+function respawnGuard(g) {
+  const cols = [];
+  for (let c = 0; c < W; c++) if (G.map[0][c] === E && !G.gold[0][c]) cols.push(c);
+  let c = cols.length ? cols[(Math.random() * cols.length) | 0] : Math.round(g.home.x / T);
+  let r = cols.length ? 0 : Math.round(g.home.y / T);
+  Object.assign(g, mkEnt(c, r, true), { id: g.id, home: g.home, state: 'spawn', timer: 45 });
+}
+
+// ---------------------------------------------------------------------------
+function updateHoles() {
+  for (const [k, h] of G.holes) {
+    h.t++;
+    if (h.t >= DIG_T + OPEN_T + FILL_T) {
+      G.holes.delete(k);
+      const p = G.player;
+      if (Math.round(p.x / T) === h.c && Math.round(p.y / T) === h.r) killPlayer();
+      for (const g of G.guards) {
+        if (g.state !== 'dead' && Math.round(g.x / T) === h.c && Math.round(g.y / T) === h.r) killGuard(g);
+      }
+    }
+  }
+}
+function checkCatch() {
+  const p = G.player;
+  for (const g of G.guards) {
+    if (g.state === 'dead' || g.state === 'spawn') continue;
+    if (Math.abs(g.x - p.x) < 11 && Math.abs(g.y - p.y) < 11) { killPlayer(); return; }
+  }
+}
+function killPlayer() {
+  if (mode !== 'play') return;
+  mode = 'dying'; G.dieT = 80; sfx.die(); buzz([40, 40, 80]);
+}
+function winLevel() {
+  mode = 'won'; score += 1500; lives = Math.min(lives + 1, 99); sfx.win(); buzz(30);
+  save.done[levelIdx] = true;
+  save.unlocked = Math.max(save.unlocked, Math.min(levelIdx + 2, LEVELS.length));
+  save.best = Math.max(save.best, score);
+  const next = levelIdx + 1 < LEVELS.length ? levelIdx + 1 : null;
+  save.cur = next === null ? null : { level: next, score, lives };
+  persist();
+  setTimeout(() => {
+    if (mode !== 'won') return;
+    if (next === null) showDone(); else showWon();
+  }, 900);
+}
+
+function tick() {
+  G.tick++;
+  if (mode === 'play') {
+    readInput();
+    updatePlayer();
+    if (mode !== 'play') return;
+    for (const g of G.guards) updateGuard(g);
+    updateHoles();
+    checkReveal();
+    checkCatch();
+  } else if (mode === 'dying') {
+    if (--G.dieT <= 0) {
+      lives--;
+      if (lives <= 0) { save.cur = null; save.best = Math.max(save.best, score); persist(); showOver(); }
+      else { save.cur = { level: levelIdx, score, lives }; persist(); startLevel(levelIdx); }
+    }
+  }
+  if (G.revealT > 0) G.revealT--;
+  for (const pt of G.parts) { pt.x += pt.vx; pt.y += pt.vy; pt.vy += 0.12; pt.life--; }
+  G.parts = G.parts.filter(pt => pt.life > 0);
+}
+
+// ---------------------------------------------------------------------------
+// Rendering
+function draw() {
+  ctx.fillStyle = '#050611'; ctx.fillRect(0, 0, cv.width, cv.height);
+  if (!G) return;
+  for (let r = 0; r < H; r++) for (let c = 0; c < W; c++) {
+    const t = G.map[r][c], x = c * T, y = r * T;
+    if (t === BR) {
+      const h = G.holes.get(r * W + c);
+      if (!h) ctx.drawImage(tBrick, x, y);
+      else if (h.t < DIG_T) { const k = Math.ceil(16 * (1 - h.t / DIG_T)); ctx.drawImage(tBrick, 0, 16 - k, 16, k, x, y + 16 - k, 16, k); }
+      else if (h.t >= DIG_T + OPEN_T) {
+        const k = Math.ceil(16 * (h.t - DIG_T - OPEN_T) / FILL_T);
+        ctx.drawImage(tBrick, 0, 16 - k, 16, k, x, y + 16 - k, 16, k);
+      } else { ctx.fillStyle = '#140a07'; ctx.fillRect(x + 1, y + 13, 14, 3); }
+    } else if (t === SO) ctx.drawImage(tSolid, x, y);
+    else if (t === LA) ctx.drawImage(tLadder, x, y);
+    else if (t === RO) ctx.drawImage(tRope, x, y);
+    else if (t === TR) {
+      if (G.found.has(r * W + c)) { ctx.globalAlpha = 0.35; ctx.drawImage(tBrick, x, y); ctx.globalAlpha = 1; }
+      else ctx.drawImage(tBrick, x, y);
+    } else if (t === HI && G.revealed) {
+      if (G.revealT > 0 && (G.revealT >> 3) % 2) { ctx.globalAlpha = 0.4; ctx.drawImage(tLadder, x, y); ctx.globalAlpha = 1; }
+      else ctx.drawImage(tLadder, x, y);
+    }
+    if (G.gold[r][c]) {
+      const bob = (G.tick + c * 7) % 90 < 6 ? 1 : 0;
+      ctx.drawImage(tGold, x, y - bob);
+    }
+  }
+  // guards
+  for (const g of G.guards) {
+    if (g.state === 'dead') continue;
+    if (g.state === 'spawn' && (g.timer >> 2) % 2) continue;
+    let fr;
+    if (g.state === 'trapped') fr = 'fall';
+    else fr = frameFor(g);
+    const set = g.carry ? sprites.guardG : sprites.guard;
+    let dx = 0;
+    if (g.state === 'trapped' && g.timer < 40) dx = (g.timer >> 1) % 2 ? 1 : -1;
+    ctx.drawImage(set[fr][g.dir < 0 ? 1 : 0], Math.round(g.x) + dx, Math.round(g.y));
+  }
+  // player
+  const p = G.player;
+  if (mode === 'dying') {
+    if ((G.dieT >> 2) % 2) ctx.drawImage(sprites.player.fall[0], p.x, p.y);
+  } else {
+    ctx.drawImage(sprites.player[frameFor(p)][p.dir < 0 ? 1 : 0], Math.round(p.x), Math.round(p.y));
+  }
+  for (const pt of G.parts) { ctx.fillStyle = pt.col; ctx.fillRect(pt.x | 0, pt.y | 0, 2, 2); }
+  if (G.revealed && G.revealT > 0) {
+    ctx.fillStyle = 'rgba(255,201,60,' + (G.revealT / 300) + ')'; ctx.fillRect(0, 0, cv.width, cv.height);
+  }
+}
+function frameFor(e) {
+  const a = (e.anim >> 3) % 2;
+  if (e.pose === 'fall') return 'fall';
+  if (e.pose === 'climb' || e.pose === 'rope') return a ? 'climb' : 'climbF';
+  return a ? 'runA' : 'runB';
+}
+// climbing frame B = mirrored climb
+for (const who in sprites) sprites[who].climbF = [sprites[who].climb[1], sprites[who].climb[0]];
+
+// ---------------------------------------------------------------------------
+// HUD + overlays
+const $ = id => document.getElementById(id);
+const ov = $('ov');
+function hud() {
+  $('hLvl').textContent = levelIdx + 1;
+  $('hGold').textContent = G ? goldLeft() : 0;
+  $('hLives').textContent = lives;
+  $('hScore').textContent = score;
+}
+function showOverlay(html) { ov.innerHTML = html; ov.hidden = false; }
+function hideOverlay() { ov.hidden = true; ov.innerHTML = ''; }
+
+function showMenu() {
+  mode = 'menu';
+  const cur = save.cur;
+  showOverlay(`<div class="card">
+    <h1>LODE RUSH</h1>
+    <p>Grab every bag of gold, dodge the guards, dig traps. When the last bag is yours, a ladder appears. Climb it to the top.</p>
+    <div class="row">
+      ${cur ? `<button class="btn" id="mCont">Continue · Level ${cur.level + 1}</button>` : ''}
+      <button class="btn ${cur ? 'alt' : ''}" id="mNew">${cur ? 'New game' : 'Play'}</button>
+    </div>
+    <div class="row">
+      <button class="btn alt" id="mLvls">Levels</button>
+      <button class="btn alt" id="mHelp">How to play</button>
+    </div>
+    <div class="row">
+      <button class="btn alt" id="mDiff">Guards: ${DIFF[save.diff].label}</button>
+      <button class="btn alt" id="mSnd">Sound: ${save.sound ? 'On' : 'Off'}</button>
+    </div>
+    ${save.best ? `<p class="stat">BEST ${save.best}</p>` : ''}
+    <p id="rot">Tip: turn your phone sideways for a bigger playfield.</p>
+  </div>`);
+  if (cur) $('mCont').onclick = () => { score = cur.score; lives = cur.lives; startLevel(cur.level); };
+  $('mNew').onclick = () => newGame(0);
+  $('mLvls').onclick = showLevels;
+  $('mHelp').onclick = showHelp;
+  $('mDiff').onclick = () => { save.diff = save.diff === 'normal' ? 'hard' : save.diff === 'hard' ? 'easy' : 'normal'; persist(); showMenu(); };
+  $('mSnd').onclick = () => { save.sound = !save.sound; persist(); showMenu(); };
+}
+function newGame(i) { score = 0; lives = DIFF[save.diff].lives; startLevel(i); }
+function showLevels() {
+  const btns = LEVELS.map((L, i) => `<button data-i="${i}" class="${save.done[i] ? 'done' : ''}" ${i < save.unlocked ? '' : 'disabled'} aria-label="Level ${i + 1}: ${L.name}">${i + 1}</button>`).join('');
+  showOverlay(`<div class="card"><h2>Levels</h2><div class="levels">${btns}</div>
+    <p>Gold numbers are cleared. Beat a level to unlock the next.</p>
+    <div class="row"><button class="btn alt" id="lBack">Back</button></div></div>`);
+  ov.querySelectorAll('.levels button').forEach(b => b.onclick = () => newGame(+b.dataset.i));
+  $('lBack').onclick = showMenu;
+}
+function showHelp() {
+  showOverlay(`<div class="card"><h2>How to play</h2>
+    <dl class="help">
+      <dt>MOVE</dt><dd>Drag the left pad. Hold diagonal to grab a ladder as you run past it.</dd>
+      <dt>DIG</dt><dd>◣ / ◢ blast the brick below-left or below-right. Guards fall in and get stuck for a few seconds.</dd>
+      <dt>HOLES</dt><dd>Bricks grow back after about 6 seconds. Anyone still inside is crushed. Guards respawn at the top.</dd>
+      <dt>GOLD</dt><dd>Guards with a yellow hat are carrying gold. Trap them to make them drop it.</dd>
+      <dt>EXIT</dt><dd>Take all the gold, then climb the new ladder to the top row.</dd>
+      <dt>TRICKS</dt><dd>You can walk across a trapped guard's head. Some bricks are fake. You can't dig under ladders or gold.</dd>
+      <dt>KEYS</dt><dd>Arrows / WASD, Z and X to dig, P to pause.</dd>
+    </dl>
+    <div class="row"><button class="btn alt" id="hBack">Back</button></div></div>`);
+  $('hBack').onclick = mode === 'pause' ? showPause : showMenu;
+}
+function showPause() {
+  if (mode !== 'play' && mode !== 'pause') return;
+  mode = 'pause';
+  showOverlay(`<div class="card"><h2>Paused</h2>
+    <p>Level ${levelIdx + 1}: ${LEVELS[levelIdx].name}</p>
+    <div class="row"><button class="btn" id="pRes">Resume</button></div>
+    <div class="row"><button class="btn alt" id="pRestart">Stuck? Restart (−1 ♥)</button></div>
+    <div class="row">
+      <button class="btn alt" id="pHelp">How to play</button>
+      <button class="btn alt" id="pSnd">Sound: ${save.sound ? 'On' : 'Off'}</button>
+    </div>
+    <div class="row"><button class="btn alt" id="pMenu">Main menu</button></div></div>`);
+  $('pRes').onclick = resume;
+  $('pRestart').onclick = () => { hideOverlay(); mode = 'play'; killPlayer(); };
+  $('pHelp').onclick = showHelp;
+  $('pSnd').onclick = () => { save.sound = !save.sound; persist(); showPause(); };
+  $('pMenu').onclick = () => { save.cur = { level: levelIdx, score, lives }; persist(); showMenu(); };
+}
+function resume() { hideOverlay(); mode = 'play'; lastT = performance.now(); }
+function showWon() {
+  showOverlay(`<div class="card"><h2>Level ${levelIdx + 1} clear!</h2>
+    <p class="stat">+1500 · +1 ♥<br>SCORE ${score}</p>
+    <div class="row"><button class="btn" id="wNext">Level ${levelIdx + 2}: ${LEVELS[levelIdx + 1].name}</button></div>
+    <div class="row"><button class="btn alt" id="wMenu">Menu</button></div></div>`);
+  $('wNext').onclick = () => startLevel(levelIdx + 1);
+  $('wMenu').onclick = showMenu;
+}
+function showOver() {
+  mode = 'over';
+  showOverlay(`<div class="card"><h2>Game over</h2>
+    <p class="stat">SCORE ${score}</p>
+    <div class="row"><button class="btn" id="oRetry">Retry level ${levelIdx + 1}</button></div>
+    <div class="row"><button class="btn alt" id="oMenu">Menu</button></div></div>`);
+  $('oRetry').onclick = () => newGame(levelIdx);
+  $('oMenu').onclick = showMenu;
+}
+function showDone() {
+  mode = 'done';
+  showOverlay(`<div class="card"><h1>RICH!</h1><h2>You cleared all ${LEVELS.length} levels</h2>
+    <p class="stat">SCORE ${score}</p>
+    <p>Try them again with tougher guards: switch Guards to Hard in the menu.</p>
+    <div class="row"><button class="btn" id="dMenu">Menu</button></div></div>`);
+  $('dMenu').onclick = showMenu;
+}
+function startLevel(i) {
+  levelIdx = i; loadLevel(i); hideOverlay(); mode = 'play';
+  save.cur = { level: i, score, lives }; persist();
+  lastT = performance.now(); wake();
+}
+
+// ---------------------------------------------------------------------------
+// Touch controls
+const pad = { h: 0, v: 0, id: null };
+const padEl = $('pad'), knob = $('knob');
+const arrows = { u: padEl.querySelector('.u'), d: padEl.querySelector('.d'), l: padEl.querySelector('.l'), r: padEl.querySelector('.r') };
+function padFrom(e) {
+  const rc = padEl.getBoundingClientRect();
+  const cx = rc.left + rc.width / 2, cy = rc.top + rc.height / 2, rad = rc.width / 2;
+  let dx = (e.clientX - cx) / rad, dy = (e.clientY - cy) / rad;
+  const len = Math.hypot(dx, dy);
+  let h = 0, v = 0;
+  if (len > 0.22) {
+    const ax = Math.abs(dx), ay = Math.abs(dy);
+    if (ay < ax * 0.5) h = Math.sign(dx);
+    else if (ax < ay * 0.5) v = Math.sign(dy);
+    else { h = Math.sign(dx); v = Math.sign(dy); }
+  }
+  pad.h = h; pad.v = v;
+  const k = Math.min(len, 1) / (len || 1);
+  knob.style.transform = `translate(${dx * k * rad * 0.62}px, ${dy * k * rad * 0.62}px)`;
+  paintPad();
+}
+function paintPad() {
+  arrows.u.classList.toggle('on', pad.v < 0); arrows.d.classList.toggle('on', pad.v > 0);
+  arrows.l.classList.toggle('on', pad.h < 0); arrows.r.classList.toggle('on', pad.h > 0);
+}
+function padEnd(e) {
+  if (e.pointerId !== pad.id) return;
+  pad.id = null; pad.h = 0; pad.v = 0; knob.style.transform = ''; paintPad();
+}
+padEl.addEventListener('pointerdown', e => { e.preventDefault(); audio(); pad.id = e.pointerId; padEl.setPointerCapture(e.pointerId); padFrom(e); });
+padEl.addEventListener('pointermove', e => { if (e.pointerId === pad.id) padFrom(e); });
+padEl.addEventListener('pointerup', padEnd);
+padEl.addEventListener('pointercancel', padEnd);
+padEl.addEventListener('lostpointercapture', padEnd);
+for (const [id, d] of [['digL', -1], ['digR', 1]]) {
+  const b = $(id);
+  b.addEventListener('pointerdown', e => { e.preventDefault(); audio(); b.classList.add('on'); queueDig(d); });
+  const off = () => b.classList.remove('on');
+  b.addEventListener('pointerup', off); b.addEventListener('pointercancel', off); b.addEventListener('pointerleave', off);
+}
+$('bPause').addEventListener('click', () => { if (mode === 'play') showPause(); else if (mode === 'pause') resume(); });
+document.addEventListener('contextmenu', e => e.preventDefault());
+document.addEventListener('gesturestart', e => e.preventDefault());
+document.addEventListener('dblclick', e => e.preventDefault());
+
+const KEYMAP = { ArrowLeft: 1, ArrowRight: 1, ArrowUp: 1, ArrowDown: 1, a: 1, d: 1, w: 1, s: 1 };
+window.addEventListener('keydown', e => {
+  const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  if (KEYMAP[k]) { keys.add(k); e.preventDefault(); }
+  if (k === 'z' || k === 'q') queueDig(-1);
+  if (k === 'x' || k === 'e') queueDig(1);
+  if (k === 'p' || k === 'Escape') { if (mode === 'play') showPause(); else if (mode === 'pause') resume(); }
+  if ((k === ' ' || k === 'Enter') && mode === 'won') { e.preventDefault(); if (levelIdx + 1 < LEVELS.length) startLevel(levelIdx + 1); }
+});
+window.addEventListener('keyup', e => keys.delete(e.key.length === 1 ? e.key.toLowerCase() : e.key));
+window.addEventListener('blur', () => keys.clear());
+document.addEventListener('visibilitychange', () => { if (document.hidden && mode === 'play') showPause(); if (!document.hidden) wake(); });
+
+// Keep the screen on while playing
+let wakeLock = null;
+async function wake() {
+  try { if ('wakeLock' in navigator && !wakeLock) { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => { wakeLock = null; }); } } catch (e) {}
+}
+
+// ---------------------------------------------------------------------------
+// Layout: fit the playfield; size controls to the screen
+function layout() {
+  const st = $('stage').getBoundingClientRect();
+  const portrait = window.innerHeight > window.innerWidth;
+  const padSize = Math.round(Math.min(180, Math.max(120, Math.min(window.innerWidth, window.innerHeight) * (portrait ? 0.42 : 0.4))));
+  document.documentElement.style.setProperty('--pad', padSize + 'px');
+  document.documentElement.style.setProperty('--dig', Math.round(padSize * 0.5) + 'px');
+  let availW = st.width - 8, availH = st.height - 8;
+  if (portrait) availH = Math.min(availH, st.height - padSize - 40);
+  const s = Math.max(0.5, Math.min(availW / 448, availH / 256));
+  cv.style.width = Math.floor(448 * s) + 'px';
+  cv.style.height = Math.floor(256 * s) + 'px';
+  cv.style.marginTop = portrait ? '6px' : '0';
+}
+window.addEventListener('resize', layout);
+window.addEventListener('orientationchange', () => setTimeout(layout, 150));
+
+// ---------------------------------------------------------------------------
+// Main loop (fixed 60Hz step)
+let lastT = performance.now(), accT = 0;
+function frame(now) {
+  let dt = now - lastT; lastT = now;
+  if (dt > 250) dt = 250;
+  if (G && (mode === 'play' || mode === 'dying' || mode === 'won')) {
+    accT += dt;
+    while (accT >= 1000 / 60) { accT -= 1000 / 60; tick(); }
+  } else accT = 0;
+  draw(); hud();
+  requestAnimationFrame(frame);
+}
+layout();
+loadLevel(save.cur ? save.cur.level : 0);
+levelIdx = save.cur ? save.cur.level : 0;
+showMenu();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
